@@ -1,0 +1,52 @@
+{
+  "name": "pw-test-automation",
+  "version": "1.0.0",
+  "description": "sample playwright test automation for testing web application and api",
+  "keywords": [
+    "playwright",
+    "testing",
+    "api_testing"
+  ],
+  "license": "ISC",
+  "author": "veathakotla",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "test",
+    "lint": "eslint tests/**/*.ts",
+    "lint:fix": "eslint tests/**/*.ts --fix",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.58.2",
+    "lodash": "^4.17.23"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^2.0.3",
+    "@eslint/js": "^9.39.4",
+    "@types/lodash": "^4.17.24",
+    "@types/node": "^25.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.0",
+    "@typescript-eslint/parser": "^8.57.0",
+    "@typescript-eslint/type-utils": "^8.57.0",
+    "@typescript-eslint/utils": "^8.57.0",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsdoc": "^62.8.0",
+    "eslint-plugin-playwright": "^2.10.0",
+    "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^17.4.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "typescript": "^5.9.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  }
+}

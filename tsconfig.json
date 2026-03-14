@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    // Type safety
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Target & module
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "esModuleInterop": true,
+
+    // Output
+    "outDir": "./dist",
+    "rootDir": "./tests",
+    "sourceMap": true,
+    "declaration": false, // true only if publishing a library
+
+    // Performance
+    "skipLibCheck": true, // skip type checks on node_modules .d.ts
+
+    // Imports
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+
+    // Types — be explicit, not greedy
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
