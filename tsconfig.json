@@ -17,8 +17,6 @@
     "esModuleInterop": true,
 
     // Output
-    "outDir": "./dist",
-    "rootDir": "./tests",
     "sourceMap": true,
     "declaration": false, // true only if publishing a library
 
@@ -34,6 +32,6 @@
     // Types — be explicit, not greedy
     "types": ["node", "@playwright/test"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts","playwright.config.ts"],
   "exclude": ["node_modules", "dist"]
 }
