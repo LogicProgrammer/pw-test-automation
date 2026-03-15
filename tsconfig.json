@@ -13,7 +13,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "esModuleInterop": true,
 
     // Output
@@ -26,12 +26,13 @@
     // Imports
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@test-setup": ["test-setup/base-test.ts"],
+      "@playwright-utils": ["src/playwright"]
     },
 
     // Types — be explicit, not greedy
     "types": ["node", "@playwright/test"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts","playwright.config.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts", "test-setup/**/*.ts", "playwright.config.ts"],
   "exclude": ["node_modules", "dist"]
 }
