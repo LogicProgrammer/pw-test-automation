@@ -6,16 +6,20 @@ import tsParser from '@typescript-eslint/parser';
 import globals from 'globals';
 import { fixupPluginRules } from '@eslint/compat';
 import playwright from 'eslint-plugin-playwright';
+import eslintConfigPrettier from 'eslint-config-prettier';
+import prettier from 'eslint-plugin-prettier';
 
 export default [
   {
     ignores: ['node_modules/**']
   },
   js.configs.recommended,
+  eslintConfigPrettier,
   {
     files: ['**/*.{js,ts,tsx}'],
     plugins: {
       '@typescript-eslint': typescriptEslint,
+      prettier: prettier,
       import: fixupPluginRules(importPlugin),
       jsdoc: fixupPluginRules(jsdoc)
     },
@@ -39,6 +43,9 @@ export default [
       }
     },
     rules: {
+      // prettier rules
+      'prettier/prettier': 'error',
+
       'no-trailing-spaces': 'warn',
       'no-empty-pattern': 'off',
       'no-unused-vars': 'warn',
