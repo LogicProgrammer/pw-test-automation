@@ -1,5 +1,5 @@
-import { type Page, test as base, expect as pwExpect } from '@playwright/test';
 import { Component, pageContext } from '@playwright-utils';
+import { type Page, test as base, expect as pwExpect } from '@playwright/test';
 
 // ─── Fixture types ────────────────────────────────────────────────────────────
 
@@ -10,6 +10,8 @@ export type BaseFixtures = {
    * and cleared at teardown.
    */
   page: Page;
+  message: string;
+  data: Record<string, string>;
 };
 
 // ─── Base test ────────────────────────────────────────────────────────────────
@@ -29,6 +31,17 @@ export const baseTest = base.extend<BaseFixtures>({
     pageContext.set(page);
     await use(page);
     pageContext.clear();
+  },
+  message: async ({}, use) => {
+    console.log('setting up message fixture');
+    await use('Hello from BaseFixtures!');
+  },
+  data: async ({}, use, testInfo) => {
+    console.log('setting up data fixture');
+    console.log('Test title:', testInfo.title);
+    console.log('Test tags:', testInfo.tags);
+    const testData = { name: 'vijay' };
+    await use(testData);
   },
 });
 
