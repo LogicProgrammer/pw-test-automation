@@ -31,9 +31,12 @@ import {
   startOfMonth,
   startOfWeek,
   subDays,
+  subHours,
+  subMinutes,
   subMonths,
   subYears,
 } from 'date-fns';
+import { format as formatTz, fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DATE FORMAT CONSTANTS
@@ -102,6 +105,78 @@ export type DateFormatKey = keyof typeof DATE_FORMATS;
 export type DateFormatValue = (typeof DATE_FORMATS)[DateFormatKey];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TIMEZONE CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * IANA timezone identifiers for common zones.
+ * Use these constants in DateUtilityOptions and toTimezone() calls.
+ *
+ * @example
+ * const du = new DateUtility('2026-03-28 14:30:00', {
+ *   format: DATE_FORMATS.DATETIME_24H,
+ *   timezone: TIMEZONES.US.PACIFIC,
+ * });
+ * du.toTimezone(TIMEZONES.US.EASTERN).format(DATE_FORMATS.DATETIME_24H);
+ * // '2026-03-28 17:30:00'
+ */
+export const TIMEZONES = {
+  US: {
+    /** UTC-8 / UTC-7 (DST) */
+    PACIFIC: 'America/Los_Angeles',
+    /** UTC-7 / UTC-6 (DST) */
+    MOUNTAIN: 'America/Denver',
+    /** UTC-6 / UTC-5 (DST) */
+    CENTRAL: 'America/Chicago',
+    /** UTC-5 / UTC-4 (DST) */
+    EASTERN: 'America/New_York',
+    /** UTC-10, no DST */
+    HAWAII: 'Pacific/Honolulu',
+    /** UTC-9 / UTC-8 (DST) */
+    ALASKA: 'America/Anchorage',
+  },
+  EUROPE: {
+    /** UTC+0 / UTC+1 (BST) */
+    LONDON: 'Europe/London',
+    /** UTC+1 / UTC+2 (CEST) */
+    PARIS: 'Europe/Paris',
+    /** UTC+1 / UTC+2 (CEST) */
+    BERLIN: 'Europe/Berlin',
+    /** UTC+2 / UTC+3 (EEST) */
+    ATHENS: 'Europe/Athens',
+    /** UTC+3, no DST */
+    MOSCOW: 'Europe/Moscow',
+  },
+  ASIA: {
+    /** UTC+5:30, no DST */
+    KOLKATA: 'Asia/Kolkata',
+    /** UTC+5:45, no DST */
+    KATHMANDU: 'Asia/Kathmandu',
+    /** UTC+7, no DST */
+    BANGKOK: 'Asia/Bangkok',
+    /** UTC+8, no DST */
+    SHANGHAI: 'Asia/Shanghai',
+    /** UTC+8, no DST */
+    SINGAPORE: 'Asia/Singapore',
+    /** UTC+9, no DST */
+    TOKYO: 'Asia/Tokyo',
+    /** UTC+9 / UTC+10 (KDT) */
+    SEOUL: 'Asia/Seoul',
+  },
+  PACIFIC: {
+    /** UTC+10 / UTC+11 (AEDT) */
+    SYDNEY: 'Australia/Sydney',
+    /** UTC+12 / UTC+13 (NZDT) */
+    AUCKLAND: 'Pacific/Auckland',
+  },
+  /** Universal Coordinated Time */
+  UTC: 'UTC',
+} as const;
+
+/** Any valid IANA timezone string. Use TIMEZONES constants for type safety. */
+export type Timezone = string;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -121,12 +196,26 @@ export interface DateUtilityOptions {
    * Defaults to the current date/time if not provided.
    */
   referenceDate?: Date;
+
+  /**
+   * IANA timezone of the input value. When provided, the input is interpreted
+   * as wall-clock time in this zone and converted to UTC internally.
+   * Use TIMEZONES constants for safe, readable values.
+   *
+   * @example
+   * // '2026-03-28 14:30:00' is treated as Pacific time → stored as UTC
+   * new DateUtility('2026-03-28 14:30:00', {
+   *   format: DATE_FORMATS.DATETIME_24H,
+   *   timezone: TIMEZONES.US.PACIFIC,
+   * });
+   */
+  timezone?: Timezone;
 }
 
 /** Result of a safe parse attempt. */
 export interface SafeParseResult {
   success: boolean;
-  value: DateUtility | null;
+  value: DateUtils | null;
   error: string | null;
 }
 
@@ -160,15 +249,17 @@ export interface SafeParseResult {
  * const du = new DateUtility(1743163200);
  * du.toISO(); // '2025-03-28T00:00:00.000Z'
  */
-export class DateUtility {
+export class DateUtils {
   private readonly _date: Date;
   private readonly _sourcePattern: string | undefined;
+  private readonly _timezone: Timezone | undefined;
 
   // ── Constructor ─────────────────────────────────────────────────────────────
 
   constructor(input: DateInput, options: DateUtilityOptions = {}) {
-    this._date = DateUtility._resolveInput(input, options);
+    this._date = DateUtils._resolveInput(input, options);
     this._sourcePattern = typeof input === 'string' ? options.format : undefined;
+    this._timezone = options.timezone;
   }
 
   // ── Private helpers ──────────────────────────────────────────────────────────
@@ -178,7 +269,8 @@ export class DateUtility {
       if (!isValid(input)) {
         throw new Error('[DateUtility] Invalid Date object provided.');
       }
-      return input;
+      // If a timezone is given, reinterpret the Date's wall-clock time in that zone → UTC
+      return options.timezone ? fromZonedTime(input, options.timezone) : input;
     }
 
     if (typeof input === 'number') {
@@ -190,13 +282,15 @@ export class DateUtility {
     }
 
     if (typeof input === 'string') {
-      return DateUtility._parseString(input, options);
+      return DateUtils._parseString(input, options);
     }
 
     throw new Error('[DateUtility] Input must be a Date, string, or Unix timestamp (number).');
   }
 
   private static _parseString(input: string, options: DateUtilityOptions): Date {
+    let localDate: Date;
+
     if (!options.format) {
       // Fallback: attempt ISO 8601 auto-detection
       const iso = parseISO(input);
@@ -206,28 +300,30 @@ export class DateUtility {
             `Provide a format pattern via options e.g. { format: DATE_FORMATS.EU_SHORT }.`,
         );
       }
-      return iso;
+      localDate = iso;
+    } else {
+      const ref = options.referenceDate ?? new Date();
+      const parsed = parse(input, options.format, ref);
+      if (!isValid(parsed)) {
+        throw new Error(
+          `[DateUtility] Failed to parse "${input}" with pattern "${options.format}". ` +
+            `Verify the pattern matches the input exactly.`,
+        );
+      }
+      localDate = parsed;
     }
 
-    const ref = options.referenceDate ?? new Date();
-    const parsed = parse(input, options.format, ref);
-
-    if (!isValid(parsed)) {
-      throw new Error(
-        `[DateUtility] Failed to parse "${input}" with pattern "${options.format}". ` +
-          `Verify the pattern matches the input exactly.`,
-      );
-    }
-
-    return parsed;
+    // If a timezone is provided, treat the parsed wall-clock time as being in
+    // that zone and convert it to UTC for internal storage.
+    return options.timezone ? fromZonedTime(localDate, options.timezone) : localDate;
   }
 
-  private _wrap(date: Date): DateUtility {
-    return new DateUtility(date);
+  private _wrap(date: Date): DateUtils {
+    return new DateUtils(date);
   }
 
   private _resolve(other: DateInput, opts?: DateUtilityOptions): Date {
-    return new DateUtility(other, opts).toDate();
+    return new DateUtils(other, opts).toDate();
   }
 
   // ── Static factory methods ───────────────────────────────────────────────────
@@ -238,8 +334,8 @@ export class DateUtility {
    * @example
    * DateUtility.today().format(DATE_FORMATS.ISO_DATE); // '2026-03-28'
    */
-  static today(): DateUtility {
-    return new DateUtility(startOfDay(new Date()));
+  static today(): DateUtils {
+    return new DateUtils(startOfDay(new Date()));
   }
 
   /**
@@ -248,8 +344,8 @@ export class DateUtility {
    * @example
    * DateUtility.now().toISO(); // '2026-03-28T14:32:00.000Z'
    */
-  static now(): DateUtility {
-    return new DateUtility(new Date());
+  static now(): DateUtils {
+    return new DateUtils(new Date());
   }
 
   /**
@@ -258,8 +354,8 @@ export class DateUtility {
    * @example
    * DateUtility.fromUnix(1743163200).format(DATE_FORMATS.ISO_DATE);
    */
-  static fromUnix(timestamp: number): DateUtility {
-    return new DateUtility(timestamp);
+  static fromUnix(timestamp: number): DateUtils {
+    return new DateUtils(timestamp);
   }
 
   /**
@@ -272,7 +368,7 @@ export class DateUtility {
    */
   static safeParse(input: DateInput, options?: DateUtilityOptions): SafeParseResult {
     try {
-      return { success: true, value: new DateUtility(input, options), error: null };
+      return { success: true, value: new DateUtils(input, options), error: null };
     } catch (err) {
       return {
         success: false,
@@ -289,9 +385,9 @@ export class DateUtility {
    * DateUtility.max(['2026-01-01', '2026-06-01', '2025-12-31']).format(DATE_FORMATS.ISO_DATE);
    * // '2026-06-01'
    */
-  static max(inputs: DateInput[], options?: DateUtilityOptions): DateUtility {
-    const dates = inputs.map(i => new DateUtility(i, options).toDate());
-    return new DateUtility(max(dates));
+  static max(inputs: DateInput[], options?: DateUtilityOptions): DateUtils {
+    const dates = inputs.map(i => new DateUtils(i, options).toDate());
+    return new DateUtils(max(dates));
   }
 
   /**
@@ -301,9 +397,9 @@ export class DateUtility {
    * DateUtility.min(['2026-01-01', '2026-06-01', '2025-12-31']).format(DATE_FORMATS.ISO_DATE);
    * // '2025-12-31'
    */
-  static min(inputs: DateInput[], options?: DateUtilityOptions): DateUtility {
-    const dates = inputs.map(i => new DateUtility(i, options).toDate());
-    return new DateUtility(min(dates));
+  static min(inputs: DateInput[], options?: DateUtilityOptions): DateUtils {
+    const dates = inputs.map(i => new DateUtils(i, options).toDate());
+    return new DateUtils(min(dates));
   }
 
   // ── Accessors ────────────────────────────────────────────────────────────────
@@ -349,79 +445,141 @@ export class DateUtility {
     return this._sourcePattern;
   }
 
+  /** The IANA timezone this instance was created with, if any. */
+  get timezone(): Timezone | undefined {
+    return this._timezone;
+  }
+
+  // ── Timezone ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Converts the internal UTC moment to wall-clock time in the target timezone
+   * and returns a new DateUtility anchored to that zone.
+   *
+   * The internal UTC value is preserved — only the wall-clock representation
+   * changes. All subsequent format() calls will reflect the target timezone.
+   *
+   * @example
+   * const pacific = new DateUtility('2026-03-28 14:30:00', {
+   *   format: DATE_FORMATS.DATETIME_24H,
+   *   timezone: TIMEZONES.US.PACIFIC,
+   * });
+   * pacific.toTimezone(TIMEZONES.US.EASTERN).format(DATE_FORMATS.DATETIME_24H);
+   * // '2026-03-28 17:30:00'
+   */
+  toTimezone(tz: Timezone): DateUtils {
+    const zoned = toZonedTime(this._date, tz);
+    return new DateUtils(zoned, { timezone: tz });
+  }
+
+  /**
+   * Formats the date as it appears in the given timezone, without converting
+   * the underlying DateUtility. Useful for display-only formatting.
+   *
+   * @example
+   * du.formatInTimezone(DATE_FORMATS.DATETIME_24H, TIMEZONES.US.EASTERN);
+   * // '2026-03-28 17:30:00'
+   */
+  formatInTimezone(pattern: string, tz: Timezone): string {
+    return formatTz(toZonedTime(this._date, tz), pattern, { timeZone: tz });
+  }
+
+  /**
+   * Returns a native JS Date object representing the wall-clock time in the
+   * given timezone. Use this when you need to hand off a Date to a third-party
+   * library that is timezone-aware.
+   *
+   * @example
+   * du.toDateInTimezone(TIMEZONES.US.EASTERN);
+   * // Date object whose local time reflects Eastern wall-clock time
+   */
+  toDateInTimezone(tz: Timezone): Date {
+    return toZonedTime(this._date, tz);
+  }
+
   // ── Boundary helpers ─────────────────────────────────────────────────────────
 
   /** Returns a new DateUtility at 00:00:00.000 of the same day. */
-  startOfDay(): DateUtility {
+  startOfDay(): DateUtils {
     return this._wrap(startOfDay(this._date));
   }
 
   /** Returns a new DateUtility at 23:59:59.999 of the same day. */
-  endOfDay(): DateUtility {
+  endOfDay(): DateUtils {
     return this._wrap(endOfDay(this._date));
   }
 
   /** Returns a new DateUtility at the first moment of the current month. */
-  startOfMonth(): DateUtility {
+  startOfMonth(): DateUtils {
     return this._wrap(startOfMonth(this._date));
   }
 
   /** Returns a new DateUtility at the last moment of the current month. */
-  endOfMonth(): DateUtility {
+  endOfMonth(): DateUtils {
     return this._wrap(endOfMonth(this._date));
   }
 
   /** Returns a new DateUtility at the start of the current week (Sunday by default). */
-  startOfWeek(): DateUtility {
+  startOfWeek(): DateUtils {
     return this._wrap(startOfWeek(this._date));
   }
 
   /** Returns a new DateUtility at the end of the current week (Saturday by default). */
-  endOfWeek(): DateUtility {
+  endOfWeek(): DateUtils {
     return this._wrap(endOfWeek(this._date));
   }
 
   // ── Arithmetic — addition ────────────────────────────────────────────────────
 
   /** Returns a new DateUtility with N days added. */
-  addDays(n: number): DateUtility {
+  addDays(n: number): DateUtils {
     return this._wrap(addDays(this._date, n));
   }
 
   /** Returns a new DateUtility with N months added. */
-  addMonths(n: number): DateUtility {
+  addMonths(n: number): DateUtils {
     return this._wrap(addMonths(this._date, n));
   }
 
   /** Returns a new DateUtility with N years added. */
-  addYears(n: number): DateUtility {
+  addYears(n: number): DateUtils {
     return this._wrap(addYears(this._date, n));
   }
 
   /** Returns a new DateUtility with N hours added. */
-  addHours(n: number): DateUtility {
+  addHours(n: number): DateUtils {
     return this._wrap(addHours(this._date, n));
   }
 
   /** Returns a new DateUtility with N minutes added. */
-  addMinutes(n: number): DateUtility {
+  addMinutes(n: number): DateUtils {
     return this._wrap(addMinutes(this._date, n));
   }
 
   // ── Arithmetic — subtraction ─────────────────────────────────────────────────
 
   /** Returns a new DateUtility with N days subtracted. */
-  subDays(n: number): DateUtility {
+  subDays(n: number): DateUtils {
     return this._wrap(subDays(this._date, n));
   }
 
+  /** Returns a new DateUtility with N hours subtracted. */
+  subHours(n: number): DateUtils {
+    return this._wrap(subHours(this._date, n));
+  }
+
+  /** Returns a new DateUtility with N minutes subtracted. */
+  subMinutes(n: number): DateUtils {
+    return this._wrap(subMinutes(this._date, n));
+  }
+
   /** Returns a new DateUtility with N months subtracted. */
-  subMonths(n: number): DateUtility {
+  subMonths(n: number): DateUtils {
     return this._wrap(subMonths(this._date, n));
   }
 
   /** Returns a new DateUtility with N years subtracted. */
-  subYears(n: number): DateUtility {
+  subYears(n: number): DateUtils {
     return this._wrap(subYears(this._date, n));
   }
 
@@ -516,7 +674,7 @@ export class DateUtility {
    * @example
    * du.clamp('2026-01-01', '2026-06-30').format(DATE_FORMATS.ISO_DATE);
    */
-  clamp(start: DateInput, end: DateInput, startOpts?: DateUtilityOptions, endOpts?: DateUtilityOptions): DateUtility {
+  clamp(start: DateInput, end: DateInput, startOpts?: DateUtilityOptions, endOpts?: DateUtilityOptions): DateUtils {
     return this._wrap(
       clamp(this._date, {
         start: this._resolve(start, startOpts),
