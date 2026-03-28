@@ -10,8 +10,9 @@ import { pageContext } from '@playwright-utils';
  *               via PageContext automatically — no source needed.
  * - Locator   : Raw Playwright Locator. Used as-is.
  * - Component : Framework wrapper. The underlying Locator is extracted.
+ * - () => Locator : Lazy locator factory. Called when locator is needed.
  */
-export type LocatorLike = string | Locator | Component;
+export type LocatorLike = string | Locator | Component | (() => Locator);
 
 /**
  * A Component with all Playwright Locator methods available directly.
@@ -101,10 +102,15 @@ export class Component {
   readonly alias: string;
 
   /**
-   * The underlying Playwright Locator this Component wraps.
-   * Not part of the public API — use `locator()` externally.
+   * Factory function for lazy locator creation.
+   * The locator is created only on first access.
    */
-  protected readonly _locator: Locator;
+  private readonly _locatorFn: () => Locator;
+
+  /**
+   * Cached locator instance. Populated on first access.
+   */
+  private _locatorInstance: Locator | null = null;
 
   /**
    * Named children registered via `find()` with an alias.
@@ -119,9 +125,21 @@ export class Component {
    * Not called directly. Use `Component.from()` to create instances.
    * Protected so the gwComponents factory can extend if needed.
    */
-  protected constructor(locator: Locator, alias = 'unnamed') {
-    this._locator = locator;
+  protected constructor(locatorFn: () => Locator, alias = 'unnamed') {
+    this._locatorFn = locatorFn;
     this.alias = alias;
+  }
+
+  /**
+   * Lazy getter for the underlying Playwright Locator.
+   * Creates the locator on first access and caches it.
+   * Not part of the public API — use `locator()` externally.
+   */
+  protected get _locator(): Locator {
+    if (this._locatorInstance === null) {
+      this._locatorInstance = this._locatorFn();
+    }
+    return this._locatorInstance;
   }
 
   // ─── Static factory ───────────────────────────────────────────────────────
@@ -162,8 +180,14 @@ export class Component {
    * ```
    */
   static from(input: LocatorLike, alias?: string): ProxiedComponent {
+    if (typeof input === 'function') {
+      // Lazy locator factory — pass it directly to constructor
+      return new Component(input, alias)._proxify();
+    }
+
+    // For other inputs, resolve immediately and create component
     const locator = resolveLocator(input);
-    return new Component(locator, alias)._proxify();
+    return new Component(() => locator, alias)._proxify();
   }
 
   // ─── Tree navigation ──────────────────────────────────────────────────────
@@ -206,11 +230,14 @@ export class Component {
    * ```
    */
   find(input: LocatorLike, alias?: string): ProxiedComponent {
+    // Create a factory function that will lazily resolve the locator
     // Selector strings are scoped to this Component's Locator.
     // Locator and Component inputs are used as-is.
-    const locator = typeof input === 'string' ? this._locator.locator(input) : resolveLocator(input);
+    const locatorFn = () => {
+      return typeof input === 'string' ? this._locator.locator(input) : resolveLocator(input);
+    };
 
-    const child = new Component(locator, alias)._proxify();
+    const child = new Component(locatorFn, alias)._proxify();
 
     parentMap.set(child, this);
     if (alias) this._children.set(alias, child);
@@ -335,7 +362,7 @@ export class Component {
               // are wrapped back into a Component so chaining always returns
               // Component, never a raw Locator.
               if (isRawLocator(result)) {
-                return new Component(result)._proxify();
+                return new Component(() => result)._proxify();
               }
 
               return result;
@@ -392,6 +419,11 @@ export class Component {
 export function resolveLocator(input: LocatorLike): Locator {
   if (input instanceof Component) {
     return input.locator();
+  }
+
+  if (typeof input === 'function') {
+    // Lazy locator factory — call it to get the Locator
+    return input();
   }
 
   if (typeof input === 'string') {

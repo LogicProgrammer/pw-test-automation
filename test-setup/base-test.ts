@@ -1,5 +1,12 @@
 import { Component, pageContext } from '@playwright-utils';
-import { type Page, test as base, expect as pwExpect } from '@playwright/test';
+import {
+  type Page,
+  PlaywrightTestArgs,
+  PlaywrightTestOptions,
+  TestInfo,
+  test as base,
+  expect as pwExpect,
+} from '@playwright/test';
 
 // ─── Fixture types ────────────────────────────────────────────────────────────
 
@@ -26,23 +33,27 @@ export type BaseFixtures = {
  * import { test, expect } from '../test-setup/base-test';
  * ```
  */
-export const baseTest = base.extend<BaseFixtures>({
-  page: async ({ page }, use) => {
+
+type HookFunctionType = [
+  (
+    args: PlaywrightTestArgs & PlaywrightTestOptions,
+    use: (r: void) => Promise<void>,
+    testInfo: TestInfo,
+  ) => Promise<void>,
+  { auto: boolean },
+];
+
+const createTestHook = (): HookFunctionType => [
+  async ({ page }, use) => {
     pageContext.set(page);
-    await use(page);
+    await use();
     pageContext.clear();
   },
-  message: async ({}, use) => {
-    console.log('setting up message fixture');
-    await use('Hello from BaseFixtures!');
-  },
-  data: async ({}, use, testInfo) => {
-    console.log('setting up data fixture');
-    console.log('Test title:', testInfo.title);
-    console.log('Test tags:', testInfo.tags);
-    const testData = { name: 'vijay' };
-    await use(testData);
-  },
+  { auto: true },
+];
+
+export const baseTest = base.extend<{ testHook: void }>({
+  testHook: createTestHook(),
 });
 
 export const test = baseTest;

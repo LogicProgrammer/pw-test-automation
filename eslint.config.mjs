@@ -73,7 +73,8 @@ export default [
       'playwright/no-useless-not': 'error',
       'playwright/no-wait-for-timeout': 'warn',
       'playwright/missing-playwright-await': 'error',
-      'playwright/consistent-spacing-between-blocks': 'error'
+      'playwright/consistent-spacing-between-blocks': 'error',
+      'playwright/expect-expect': 'off'
     }
   }
 ];
